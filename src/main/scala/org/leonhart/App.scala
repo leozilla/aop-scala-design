@@ -2,25 +2,45 @@ package org.leonhart
 
 import MyService.{Request, Response}
 
+import org.leonhart.spi.{ContextWithStartTime, ContextWithTraceId, NoOpImpl}
+
+import java.time.Instant
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Awaitable, ExecutionContext, Future}
 
 object MyApplication extends App {
   implicit val ec = ExecutionContext.global
 
-  val simple = new MyServiceImpl()
-  val intercepted = new MyLoggingServiceInterceptor(new MyRateLimitingServiceInterceptor(new MyServiceImpl()))
-  val stacked1 = new MyServiceImpl() with spi.LoggingImpl with spi.MonitoringImpl
-  val stacked2 = new MyServiceImpl() with spi.MonitoringImpl with spi.LoggingImpl
-  val interceptedAndStacked = new MyLoggingServiceInterceptor(new MyRateLimitingServiceInterceptor(stacked1))
+  class StackedRequestContext extends ContextWithStartTime with ContextWithTraceId {
+    var startTime: Instant  = Instant.MIN
+    var traceId: String = ""
+  }
 
-  // awaitIt(run(simple))
+  val service = new MyServiceImpl()(implicitly[ExecutionContext], new NoOpImpl {
+    override type Ctx = Unit
+    override def context: Unit = ()
+  })
+  val intercepted = new MyLoggingServiceInterceptor(new MyRateLimitingServiceInterceptor(service))
+  val stacked1SPI = new spi.LoggingImpl with spi.MonitoringImpl[StackedRequestContext] with spi.TracingImpl[StackedRequestContext] {
+    override type Ctx = StackedRequestContext
+    override def context: StackedRequestContext = new StackedRequestContext
+  }
+  val stacked2SPI = new spi.MonitoringImpl[StackedRequestContext] with spi.LoggingImpl {
+    override type Ctx = StackedRequestContext
+    override def context: StackedRequestContext = new StackedRequestContext
+  }
+  val stacked1Service = new MyServiceImpl()(implicitly[ExecutionContext], stacked1SPI)
+  val stacked2Service = new MyServiceImpl()(implicitly[ExecutionContext], stacked1SPI)
+  val interceptedAndStacked = new MyLoggingServiceInterceptor(new MyRateLimitingServiceInterceptor(stacked1Service))
+
+  // awaitIt(run(service))
   // awaitIt(run(intercepted))
-  awaitIt(run(stacked1))
+  awaitIt(run(stacked1Service))
+  awaitIt(run(stacked2Service))
   // awaitIt(run(interceptedAndStacked))
 
-  def simpleRun: Future[Response] = {
-    simple.handle(Request("1", ""))
+  def simpleRun(srv: MyService): Future[Response] = {
+    srv.handle(Request("1", ""))
   }
 
   def run(s: MyService): Future[Response] = {

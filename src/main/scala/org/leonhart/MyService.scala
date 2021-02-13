@@ -4,19 +4,18 @@ import MyService.{Request, Response}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class MyServiceImpl(implicit ec: ExecutionContext) extends MyService with spi.MyService {
+class MyServiceImpl(implicit ec: ExecutionContext, sp: spi.MyService) extends MyService {
+
   override def handle(req: Request): Future[Response] = {
-    // do stuff here
-
-
     Future {
       for (i <- 1 until 10) {
-        onProgress(i * 0.1)
+        sp.onProgress(i * 0.1)
 
         if (i == 4) {
           val xreq = ServiceX.Request(s"id$i")
-          val xctx = onServiceXRequest(xreq)
-          onServiceXResponse(xctx, ServiceX.Response(xreq.id, 200))
+          val xctx = sp.context
+          sp.onServiceXRequest(xctx, xreq)
+          sp.onServiceXResponse(xctx, ServiceX.Response(xreq.id, 200))
         }
 
         req.data match {

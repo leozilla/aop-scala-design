@@ -1,5 +1,7 @@
 package org.leonhart
 
+import org.leonhart.MyService.Response
+
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
@@ -19,5 +21,16 @@ trait MyLoggingService extends MyService {
     }
 
     f
+  }
+}
+
+trait MyRateLimitingService extends MyService {
+  implicit def ec: ExecutionContext
+
+  abstract override def handle(req: MyService.Request): Future[MyService.Response] = {
+    val isRateLimitExceeded = false
+    if (isRateLimitExceeded) {
+      Future.successful(Response(req.id, 503))
+    } else super.handle(req)
   }
 }
